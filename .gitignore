@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+coverage/
+.DS_Store
+tools/attraction-generator/cache/
+tools/attraction-generator/tmp/
+tools/attraction-generator/generation-report.json

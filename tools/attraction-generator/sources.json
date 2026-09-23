@@ -1,0 +1,39 @@
+[
+  {
+    "kind": "html",
+    "province": "上海市",
+    "grade": "5A",
+    "sourceName": "上海市文化和旅游局",
+    "url": "https://whlyj.sh.gov.cn/5ajjq/20191008/0022-29706.html"
+  },
+  {
+    "kind": "html",
+    "province": "上海市",
+    "grade": "4A",
+    "sourceName": "上海市文化和旅游局",
+    "url": "https://whlyj.sh.gov.cn/4ajjq/20191008/0022-28627.html"
+  },
+  {
+    "kind": "html",
+    "province": "上海市",
+    "grade": "3A",
+    "sourceName": "上海市文化和旅游局",
+    "url": "https://whlyj.sh.gov.cn/3ajjq/20191008/0022-29707.html"
+  },
+  {
+    "kind": "jiangsu-portal",
+    "province": "江苏省",
+    "sourceName": "江苏省文化和旅游厅",
+    "sourceUrl": "https://wlt.jszwfw.gov.cn/col/col185740/index.html",
+    "searchUrl": "https://wlt.jszwfw.gov.cn/module/search/index.jsp?field=field_5452%3A11&i_columnid=185740&field_5452=",
+    "publishedAt": "2026-03-13"
+  },
+  {
+    "kind": "remote-json",
+    "province": "浙江省",
+    "sourceName": "浙江省数据开放平台（嘉兴市）",
+    "sourceUrl": "https://data.zjzwfw.gov.cn/dopServer/#/datadetail?id=Q1MJRYTKdp_ZKe2nlprxBw%3D%3D",
+    "url": "https://data.jiaxing.gov.cn/open/rest/v1/openDataCatalog/downloadDemoCatalogFile?catalogId=25&fileType=json",
+    "publishedAt": "2020-12-18"
+  }
+]

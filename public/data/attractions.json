@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-22T00:00:00.000Z",
+  "coordSystem": "GCJ-02",
+  "coverage": ["上海市", "江苏省", "浙江省"],
+  "items": [
+    {
+      "id": "sh-310115-oriental-pearl",
+      "name": "东方明珠广播电视塔",
+      "province": "上海市",
+      "city": "上海市",
+      "district": "浦东新区",
+      "adcode": "310115",
+      "address": "浦东新区世纪大道1号",
+      "lng": 121.4997,
+      "lat": 31.2397,
+      "level": 5,
+      "levelSource": "official",
+      "tags": ["5A"],
+      "source": {
+        "name": "上海市文化和旅游局",
+        "url": "https://whlyj.sh.gov.cn/5ajjq/20191008/0022-29706.html",
+        "publishedAt": "2025-01-03"
+      }
+    },
+    {
+      "id": "sh-310115-wild-animal-park",
+      "name": "上海野生动物园",
+      "province": "上海市",
+      "city": "上海市",
+      "district": "浦东新区",
+      "adcode": "310115",
+      "address": "浦东新区南六公路178号",
+      "lng": 121.721,
+      "lat": 31.055,
+      "level": 5,
+      "levelSource": "official",
+      "tags": ["5A"],
+      "source": {
+        "name": "上海市文化和旅游局",
+        "url": "https://whlyj.sh.gov.cn/5ajjq/20191008/0022-29706.html",
+        "publishedAt": "2025-01-03"
+      }
+    },
+    {
+      "id": "sh-310115-science-museum",
+      "name": "上海科技馆",
+      "province": "上海市",
+      "city": "上海市",
+      "district": "浦东新区",
+      "adcode": "310115",
+      "address": "浦东新区世纪大道2000号",
+      "lng": 121.5415,
+      "lat": 31.218,
+      "level": 5,
+      "levelSource": "official",
+      "tags": ["5A"],
+      "source": {
+        "name": "上海市文化和旅游局",
+        "url": "https://whlyj.sh.gov.cn/5ajjq/20191008/0022-29706.html",
+        "publishedAt": "2025-01-03"
+      }
+    },
+    {
+      "id": "js-320106-sun-yat-sen-mausoleum",
+      "name": "钟山风景名胜区—中山陵园风景区",
+      "province": "江苏省",
+      "city": "南京市",
+      "district": "玄武区",
+      "adcode": "320102",
+      "address": "南京市玄武区石象路7号",
+      "lng": 118.8502,
+      "lat": 32.0603,
+      "level": 5,
+      "levelSource": "official",
+      "tags": ["5A"],
+      "source": {
+        "name": "文化和旅游部",
+        "url": "https://sjfw.mct.gov.cn/site/dataservice/rural?type=10",
+        "publishedAt": "2025-03-11"
+      }
+    },
+    {
+      "id": "js-320508-suzhou-gardens",
+      "name": "苏州园林（拙政园、虎丘山、留园）",
+      "province": "江苏省",
+      "city": "苏州市",
+      "district": "姑苏区",
+      "adcode": "320508",
+      "address": "苏州市姑苏区东北街178号",
+      "lng": 120.6299,
+      "lat": 31.3245,
+      "level": 5,
+      "levelSource": "official",
+      "tags": ["5A"],
+      "source": {
+        "name": "文化和旅游部",
+        "url": "https://sjfw.mct.gov.cn/site/dataservice/rural?type=10",
+        "publishedAt": "2025-03-11"
+      }
+    },
+    {
+      "id": "zj-330106-west-lake",
+      "name": "杭州西湖风景名胜区",
+      "province": "浙江省",
+      "city": "杭州市",
+      "district": "西湖区",
+      "adcode": "330106",
+      "address": "杭州市西湖区龙井路1号",
+      "lng": 120.1395,
+      "lat": 30.2495,
+      "level": 5,
+      "levelSource": "official",
+      "tags": ["5A"],
+      "source": {
+        "name": "文化和旅游部",
+        "url": "https://sjfw.mct.gov.cn/site/dataservice/rural?type=10",
+        "publishedAt": "2025-03-11"
+      }
+    },
+    {
+      "id": "zj-330483-wuzhen",
+      "name": "嘉兴市桐乡乌镇古镇旅游区",
+      "province": "浙江省",
+      "city": "嘉兴市",
+      "district": "桐乡市",
+      "adcode": "330483",
+      "address": "嘉兴市桐乡市石佛南路18号",
+      "lng": 120.492,
+      "lat": 30.745,
+      "level": 5,
+      "levelSource": "official",
+      "tags": ["5A"],
+      "source": {
+        "name": "文化和旅游部",
+        "url": "https://sjfw.mct.gov.cn/site/dataservice/rural?type=10",
+        "publishedAt": "2025-03-11"
+      }
+    }
+  ]
+}
