@@ -30,7 +30,7 @@ export class MapView {
   private readonly chart: ECharts;
   private readonly callbacks: MapCallbacks;
   private resizeObserver: ResizeObserver;
-  private mapName = "travel-map-root";
+  private mapName = "roam-root";
   private regionsByName = new Map<string, BoundaryFeatureProperties>();
 
   constructor(container: HTMLElement, callbacks: MapCallbacks) {

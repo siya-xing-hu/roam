@@ -12,7 +12,7 @@ const sourcesPath = resolve(toolRoot, "sources.json");
 const overridesPath = resolve(toolRoot, "overrides.json");
 const amapKey = process.env.AMAP_WEB_SERVICE_KEY;
 const gradePattern = /^([1-5])A$/;
-const requestHeaders = { "user-agent": "travel-map-personal-data-generator/0.1" };
+const requestHeaders = { "user-agent": "roam-personal-data-generator/0.1" };
 
 function decodeHtml(value) {
   return value

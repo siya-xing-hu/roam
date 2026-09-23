@@ -1,6 +1,6 @@
 import type { BoundaryLevel } from "./types";
 
-export const APP_NAME = "旅行地图";
+export const APP_NAME = "足迹";
 
 export const ROOT_REGION = {
   adcode: "100000",

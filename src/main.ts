@@ -38,7 +38,7 @@ function renderCurrent(): void {
   const current = trail.at(-1);
   if (!current) return;
   const attractions = visibleAttractions(allAttractions, current);
-  mapView.render(current.mapData, attractions, `travel-map-${current.adcode}-${current.level}`);
+  mapView.render(current.mapData, attractions, `roam-${current.adcode}-${current.level}`);
   shell.updateRegion(trail, attractions);
 }
 
