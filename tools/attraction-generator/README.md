@@ -31,12 +31,18 @@
 ## 运行
 
 ```bash
-AMAP_WEB_SERVICE_KEY=你的高德Web服务Key npm run generate
+AMAP_WEB_SERVICE_KEY=你的高德Web服务Key python3 tools/attraction-generator/generate.py
 ```
 
-生成器读取官方来源，将 1A–5A 映射为数字等级 1–5，使用高德地理编码补充 GCJ-02 坐标和行政编码，应用可选的人工覆盖，校验后原子写入 `../../public/data/attractions.json`，同时输出 `generation-report.json`。
+命令从项目根目录运行。脚本仅使用 Python 标准库，无需安装额外依赖。生成器读取官方来源，将 1A–5A 映射为数字等级 1–5，使用高德地理编码补充 GCJ-02 坐标和行政编码，应用可选的人工覆盖，校验后原子写入 `public/data/attractions.json`，同时输出 `generation-report.json`。
 
 任何数据源、地址或校验失败都会令命令返回失败，并保留上一版可用数据。高德 Key 不会写入项目文件。地理编码缓存位于 `cache/`，默认不提交。
+
+运行生成器单元测试：
+
+```bash
+python3 -m unittest discover -s tools/attraction-generator/tests -p 'test_*.py'
+```
 
 ## 人工覆盖
 
