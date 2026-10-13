@@ -1,5 +1,3 @@
-import type { BoundaryLevel } from "./types";
-
 export const APP_NAME = "足迹";
 
 export const ROOT_REGION = {
@@ -10,11 +8,11 @@ export const ROOT_REGION = {
 
 export const LEVEL_LABELS: Record<number, string> = {
   0: "未评级",
-  1: "1 级",
-  2: "2 级",
-  3: "3 级",
-  4: "4 级",
-  5: "5 级",
+  1: "1A",
+  2: "2A",
+  3: "3A",
+  4: "4A",
+  5: "5A",
   6: "精选 6",
   7: "精选 7",
   8: "精选 8",
@@ -34,26 +32,15 @@ export const LEVEL_COLORS: Record<number, string> = {
   9: "#f9e27d",
 };
 
-export const DISPLAY_THRESHOLD: Record<BoundaryLevel | "country", number> = {
-  country: 5,
-  province: 4,
-  city: 0,
-  district: 0,
-};
+export const DIRECT_DISTRICT_CODES = new Set([
+  "110000", "120000", "310000", "500000", "810000", "820000",
+]);
 
-export const MUNICIPALITY_CODES = new Set(["110000", "120000", "310000", "500000"]);
+export const MAP_ZOOM = { province: 4, city: 6, district: 9 };
 
-export function nextBoundaryLevel(
-  currentLevel: BoundaryLevel | "country",
-  adcode: string,
-): BoundaryLevel | null {
-  if (currentLevel === "country") {
-    return MUNICIPALITY_CODES.has(adcode) ? "district" : "city";
-  }
-
-  if (currentLevel === "province") {
-    return "district";
-  }
-
-  return null;
+export function minimumAttractionLevel(zoom: number): number {
+  if (zoom >= MAP_ZOOM.district) return 0;
+  if (zoom >= MAP_ZOOM.city) return 3;
+  if (zoom >= MAP_ZOOM.province) return 4;
+  return 5;
 }

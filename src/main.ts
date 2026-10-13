@@ -1,142 +1,143 @@
 import "./styles/main.css";
-import { nextBoundaryLevel, ROOT_REGION } from "./config";
-import { AttractionStore, visibleAttractions } from "./data/attractionStore";
+import { ROOT_REGION } from "./config";
+import { AttractionStore, filterAttractions, visibleAttractions } from "./data/attractionStore";
 import { BoundaryRepository } from "./data/boundaryRepository";
 import { MapView } from "./map/mapView";
-import type {
-  Attraction,
-  BoundaryFeatureProperties,
-  BoundaryLevel,
-  RegionTrailItem,
-} from "./types";
+import { ViewportBoundaries } from "./map/viewportBoundaries";
+import type { Attraction, AttractionFilters, RegionTrailItem } from "./types";
 import { AppShell } from "./ui/appShell";
 
 const app = document.querySelector<HTMLElement>("#app");
-if (!app) {
-  throw new Error("应用根节点不存在");
-}
+if (!app) throw new Error("应用根节点不存在");
 
 const boundaries = new BoundaryRepository();
 const attractionStore = new AttractionStore();
 let trail: RegionTrailItem[] = [];
 let allAttractions: Attraction[] = [];
-let currentLoadToken = 0;
+let filteredListAttractions: Attraction[] = [];
+let filters: AttractionFilters = { levels: null, query: "" };
+let mapView: MapView | null = null;
+let viewportBoundaries: ViewportBoundaries | null = null;
+let initializing = false;
+let renderError: string | null = null;
+let selectionRevision = 0;
 
 const shell = new AppShell(app, {
-  onBack: () => void navigateBack(),
-  onHome: () => void navigateHome(),
-  onAttractionSelect: (attraction) => shell.showDetails(attraction),
-  onRetry: () => void initialize(),
+  onBack: () => navigateTo(trail.length - 2),
+  onHome: () => selectRegion(ROOT_REGION.adcode),
+  onNavigate: navigateTo,
+  onAttractionSelect: showAttraction,
+  onFiltersChange: (value) => {
+    selectionRevision += 1;
+    filters = value;
+    applyFilters();
+  },
+  onRetry: () => {
+    if (viewportBoundaries) {
+      shell.clearStatus();
+      viewportBoundaries.retry();
+    } else {
+      void initialize();
+    }
+  },
 });
 
-const mapView = new MapView(shell.mapElement, {
-  onRegionClick: (properties) => void drillDown(properties),
-  onAttractionClick: (attraction) => shell.showDetails(attraction),
-});
+async function showAttraction(attraction: Attraction): Promise<void> {
+  const revision = ++selectionRevision;
+  try {
+    const region = await boundaries.resolveRegion(attraction.adcode);
+    // 连续点击景点或返回上一级时，过期请求不能把用户带回旧区域。
+    if (revision !== selectionRevision || !mapView) return;
+    if (!region) throw new Error("尚未找到该景点所属的行政区域");
+    trail = boundaries.getTrail(region.adcode);
+    updateList();
+    shell.showDetails(attraction);
+    mapView.focusRegion(region, shell.getMapPadding());
+    mapView.selectAttraction(attraction);
+  } catch (error) {
+    if (revision !== selectionRevision) return;
+    shell.showStatus((error instanceof Error ? error.message : "景点所属区域加载失败")
+      + "；请重新点击景点重试", "error", false);
+  }
+}
 
-function renderCurrent(): void {
+function updateList(): void {
   const current = trail.at(-1);
-  if (!current) return;
-  const attractions = visibleAttractions(allAttractions, current);
-  mapView.render(current.mapData, attractions, `roam-${current.adcode}-${current.level}`);
-  shell.updateRegion(trail, attractions);
+  if (current) shell.updateRegion(trail, visibleAttractions(filteredListAttractions, current));
+}
+
+function applyFilters(): void {
+  // 等级同时控制地图和列表；关键词只查列表，保留地图上的周边景点。
+  const mapAttractions = filterAttractions(allAttractions, { levels: filters.levels, query: "" });
+  filteredListAttractions = filterAttractions(mapAttractions, filters);
+  mapView?.setAttractionFilter(mapAttractions);
+  updateList();
+}
+
+function selectRegion(adcode: string, immediate = false): void {
+  selectionRevision += 1;
+  const region = boundaries.getRegion(adcode);
+  if (!region || !mapView) return;
+  trail = boundaries.getTrail(adcode);
+  updateList();
+  mapView.focusRegion(region, shell.getMapPadding(), immediate);
+}
+
+function navigateTo(index: number): void {
+  const region = trail[index];
+  if (region) selectRegion(region.adcode);
 }
 
 async function initialize(): Promise<void> {
-  const token = ++currentLoadToken;
-  shell.showStatus("正在加载全国行政边界…", "loading");
-  mapView.showLoading();
-
+  if (initializing) return;
+  initializing = true;
+  renderError = null;
+  shell.showStatus("正在加载地图和景点…", "loading");
   try {
-    const [rootMap, dataset] = await Promise.all([
-      boundaries.loadRoot(),
-      attractionStore.load(),
+    if (!mapView) {
+      mapView = new MapView(shell.mapElement, {
+        onRegionClick: selectRegion,
+        onAttractionClick: showAttraction,
+        onViewportChange: (viewport) => viewportBoundaries?.update(viewport),
+        onAttractionLevelChange: (minimumLevel) => shell.updateMapLevel(minimumLevel),
+        onError: (message) => {
+          renderError = message;
+          shell.showStatus(message, "error", false);
+        },
+      });
+    }
+    const [root, dataset] = await Promise.all([
+      boundaries.loadRoot(), attractionStore.load(), mapView.ready,
     ]);
-    if (token !== currentLoadToken) return;
-
     allAttractions = dataset.items;
     shell.setDataset(dataset);
-    trail = [{ ...ROOT_REGION, mapData: rootMap }];
-    renderCurrent();
-    shell.clearStatus();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "地图加载失败";
-    shell.showStatus(message, "error");
-  } finally {
-    mapView.hideLoading();
-  }
-}
-
-async function drillDown(properties: BoundaryFeatureProperties): Promise<void> {
-  const current = trail.at(-1);
-  if (!current) return;
-
-  const adcode = String(properties.adcode).padStart(6, "0");
-  if (properties.level === "district" || properties.childrenNum === 0) {
-    const selectedFeature = current.mapData.features.find(
-      (feature) => String(feature.properties.adcode).padStart(6, "0") === adcode,
-    );
-    const mapData = selectedFeature
-      ? { ...current.mapData, features: [selectedFeature] }
-      : current.mapData;
-    trail.push({
-      adcode,
-      name: properties.name,
-      level: "district",
-      mapData,
+    mapView.initialize(root, allAttractions);
+    applyFilters();
+    viewportBoundaries = new ViewportBoundaries(boundaries, mapView, root, (error) => {
+      if (renderError) return;
+      if (error) shell.showStatus(error, "error");
+      else shell.clearStatus();
     });
-    renderCurrent();
-    shell.clearStatus();
-    return;
-  }
-
-  const targetLevel = nextBoundaryLevel(current.level, adcode);
-  if (!targetLevel || current.level === "district") {
-    return;
-  }
-
-  const token = ++currentLoadToken;
-  shell.showStatus(`正在加载${properties.name}行政边界…`, "loading");
-  mapView.showLoading();
-
-  try {
-    const mapData = await boundaries.loadChildren(targetLevel, adcode);
-    if (token !== currentLoadToken) return;
-
-    const regionLevel = targetLevel === "district" ? "city" : "province";
-    trail.push({
-      adcode,
-      name: properties.name,
-      level: regionLevel as BoundaryLevel,
-      mapData,
-    });
-    renderCurrent();
-    shell.clearStatus();
+    selectRegion(ROOT_REGION.adcode, true);
+    viewportBoundaries.update(mapView.getViewport());
+    if (!renderError) shell.clearStatus();
   } catch (error) {
-    const message = error instanceof Error ? error.message : "下级边界加载失败";
-    shell.showStatus(`${properties.name}：${message}`, "error");
+    viewportBoundaries?.destroy();
+    viewportBoundaries = null;
+    mapView?.destroy();
+    mapView = null;
+    shell.showStatus(error instanceof Error ? error.message : "地图初始化失败，请检查浏览器是否支持 WebGL", "error");
   } finally {
-    mapView.hideLoading();
+    initializing = false;
   }
-}
-
-async function navigateBack(): Promise<void> {
-  if (trail.length <= 1) return;
-  currentLoadToken += 1;
-  trail.pop();
-  renderCurrent();
-  shell.clearStatus();
-}
-
-async function navigateHome(): Promise<void> {
-  if (trail.length <= 1) {
-    mapView.resetView();
-    return;
-  }
-  currentLoadToken += 1;
-  trail = trail.slice(0, 1);
-  renderCurrent();
-  shell.clearStatus();
 }
 
 void initialize();
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    selectionRevision += 1;
+    viewportBoundaries?.destroy();
+    mapView?.destroy();
+  });
+}

@@ -20,6 +20,17 @@ export interface Attraction {
   levelSource: "official" | "manual";
   tags: string[];
   source: AttractionSource;
+  coordinateSource?: {
+    provider: "OpenStreetMap";
+    name: string;
+    url: string;
+    externalId: string;
+    license: string;
+    licenseUrl: string;
+    original: { lng: number; lat: number; coordSystem: "WGS84" };
+    method: "mapped-point" | "point-on-surface";
+    snapshotSha256: string;
+  };
 }
 
 export interface AttractionDataset {
@@ -28,6 +39,11 @@ export interface AttractionDataset {
   coordSystem: "GCJ-02";
   coverage: string[];
   items: Attraction[];
+}
+
+export interface AttractionFilters {
+  levels: number[] | null;
+  query: string;
 }
 
 export interface BoundaryFeatureProperties {
@@ -42,10 +58,14 @@ export interface BoundaryFeatureProperties {
 
 export interface BoundaryFeature {
   type: "Feature";
+  id?: string;
   properties: BoundaryFeatureProperties;
   geometry: {
-    type: "Polygon" | "MultiPolygon";
-    coordinates: unknown;
+    type: "Polygon";
+    coordinates: number[][][];
+  } | {
+    type: "MultiPolygon";
+    coordinates: number[][][][];
   };
 }
 
@@ -61,5 +81,17 @@ export interface RegionContext {
 }
 
 export interface RegionTrailItem extends RegionContext {
-  mapData: BoundaryCollection;
+  bounds: MapBounds;
+}
+
+export type MapBounds = [west: number, south: number, east: number, north: number];
+
+export interface RegionRecord extends RegionTrailItem {
+  parentAdcode?: string;
+  childrenNum: number;
+}
+
+export interface MapViewport {
+  bounds: MapBounds;
+  zoom: number;
 }

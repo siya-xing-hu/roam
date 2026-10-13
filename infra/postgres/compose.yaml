@@ -1,0 +1,56 @@
+name: shared-postgres
+
+services:
+  postgres:
+    image: postgres:18.6@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
+    container_name: shared-postgres
+    restart: unless-stopped
+    shm_size: 256mb
+    environment:
+      POSTGRES_USER: shared_admin
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/admin_password
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - data:/var/lib/postgresql
+      - ./init:/docker-entrypoint-initdb.d:ro
+    secrets:
+      - admin_password
+      - roam_owner_password
+      - roam_app_password
+    networks:
+      database:
+        aliases:
+          - shared-postgres
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "shared_admin", "-d", "postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# 由 setup-local.mjs 单独创建，compose down -v 也不会删除共享数据卷。
+volumes:
+  data:
+    external: true
+    name: shared-postgres18-data
+
+networks:
+  database:
+    external: true
+    name: shared-postgres-network
+
+secrets:
+  admin_password:
+    file: ./.secrets/admin_password
+  roam_owner_password:
+    file: ./.secrets/roam_owner_password
+  roam_app_password:
+    file: ./.secrets/roam_app_password

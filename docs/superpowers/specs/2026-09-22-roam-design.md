@@ -100,9 +100,10 @@ ECharts + TypeScript ───────────────────�
 │           └── counties/
 ├── tools/
 │   └── attraction-generator/
-│       ├── src/
-│       ├── overrides.json
-│       ├── package.json
+│       ├── fetch_mct.py
+│       ├── geocode_amap.py
+│       ├── build_map_data.py
+│       ├── tmp/
 │       └── README.md
 ├── tests/
 ├── index.html
@@ -159,7 +160,7 @@ ECharts + TypeScript ───────────────────�
 
 官方等级同时写入 `tags`，例如 5A 景区自动产生 `level: 5` 和 `tags: ["5A"]`。人工将景点提升到 6–9 时，原始 A 级标签继续保留，并将 `levelSource` 设置为 `manual`。
 
-第一版生成器只根据官方来源自动生成 1–5 级。`overrides.json` 为未来的人工等级和附加标签预留，不要求第一版提供编辑界面。
+景点采集脚本保留官方分类，发布给前端时再映射展示等级和标签。
 
 ## 7. 景点数据格式
 
@@ -203,18 +204,11 @@ ECharts + TypeScript ───────────────────�
 
 ## 8. 一次性景点资源生成工具
 
-生成工具与应用隔离，但随仓库提交以保证数据可追溯和可重建。它执行以下步骤：
+生成工具与应用隔离，由三个脚本分别执行：
 
-1. 从上海、江苏和浙江文旅部门的官方 HTML、JSON、CSV 或附件读取名录；
-2. 保存本次来源元信息；
-3. 将名称、地址、等级和行政区字段标准化；
-4. 合并重复记录并生成稳定 ID；
-5. 将官方 1A–5A 映射为数字等级并生成对应中文标签；
-6. 使用高德地理编码 API 按官方地址补充 GCJ-02 坐标；
-7. 缓存地理编码结果，避免重复调用；
-8. 应用可选的 `overrides.json`；
-9. 校验全部记录；
-10. 原子写入 `public/data/attractions.json` 和生成报告。
+1. `fetch_mct.py` 获取文旅部全国 5A 景区和世界文化遗产资料，保留来源并输出统一 JSON；
+2. 用户确认资料后，`geocode_amap.py` 保存每次高德请求及完整响应，原始文件同时用于断点续跑；
+3. `build_map_data.py` 按景点 ID 关联本地来源数据，提取需要的字段并生成 `public/data/attractions.json`。
 
 高德 Key 通过专用于此工具的环境变量传入，禁止写入代码、缓存或最终数据文件。生成器不是前端构建流程的一部分。
 
