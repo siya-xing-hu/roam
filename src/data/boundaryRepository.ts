@@ -1,6 +1,7 @@
 import { DIRECT_DISTRICT_CODES, ROOT_REGION } from "../config";
-import { collectionBounds, featureBounds } from "../map/geometry";
-import type { BoundaryCollection, RegionRecord, RegionTrailItem } from "../types";
+import { collectionBounds, featureBounds, intersects, nearbyRegionBounds, pointInFeature } from "../map/geometry";
+import { displayRegionLevel, regionFitsViewport } from "../map/viewportSelection";
+import type { BoundaryCollection, MapViewport, RegionRecord, RegionTrailItem } from "../types";
 
 const BASE = "./data/boundaries/";
 const CACHE_LIMIT = 48;
@@ -58,6 +59,48 @@ export class BoundaryRepository {
     return this.regions.get(adcode);
   }
 
+  async regionAtViewport(viewport: MapViewport, anchor: [number, number], currentAdcode?: string): Promise<RegionRecord> {
+    let data = await this.loadRoot();
+    let region = this.getRegion(ROOT_REGION.adcode)!;
+    if (viewport.zoom < 4 || regionFitsViewport(region, viewport, currentAdcode)) return region;
+    // 从省到区县，找到视野能容纳的最粗一级；局部放大则继续走向最小区域。
+    while (data.features.length) {
+      const feature = data.features.find((item) => this.getRegion(String(item.properties.adcode)) && pointInFeature(anchor, item));
+      if (!feature) break;
+      region = this.getRegion(String(feature.properties.adcode))!;
+      if (regionFitsViewport(region, viewport, currentAdcode) || !this.childPath(region)) break;
+      data = await this.loadChildren(region);
+    }
+    return region;
+  }
+
+  async nearbyRegions(region: RegionRecord, viewport: MapViewport): Promise<RegionRecord[]> {
+    if (region.level === "country") return [];
+    const scope = nearbyRegionBounds(region.bounds);
+    const isNearby = (candidate: RegionRecord) => intersects(candidate.bounds, scope) && intersects(candidate.bounds, viewport.bounds);
+    const root = await this.loadRoot();
+    const provinces = this.collectionRegions(root).filter(isNearby);
+    const level = displayRegionLevel(region);
+    let candidates: RegionRecord[];
+    if (level === "province") {
+      candidates = provinces;
+    } else {
+      const children = (await Promise.all(provinces.map((province) => this.loadChildren(province))))
+        .flatMap((data) => this.collectionRegions(data));
+      if (level === "city") {
+        // 上海等直辖市本身就是市级展示单元，不把其区县当作周边城市。
+        candidates = [...provinces.filter((province) => DIRECT_DISTRICT_CODES.has(province.adcode)),
+          ...children.filter((child) => child.level === "city")];
+      } else {
+        const cities = children.filter((child) => child.level === "city" && isNearby(child));
+        const districts = (await Promise.all(cities.map((city) => this.loadChildren(city))))
+          .flatMap((data) => this.collectionRegions(data));
+        candidates = [...children.filter((child) => child.level === "district" || !child.childrenNum), ...districts];
+      }
+    }
+    return candidates.filter((candidate) => candidate.adcode !== region.adcode && isNearby(candidate));
+  }
+
   async resolveRegion(adcode: string): Promise<RegionRecord | undefined> {
     await this.loadRoot();
     const known = this.getRegion(adcode);
@@ -101,6 +144,14 @@ export class BoundaryRepository {
   loadChildren(region: RegionRecord): Promise<BoundaryCollection> {
     const path = this.childPath(region);
     return path ? this.read(path) : Promise.resolve(EMPTY);
+  }
+
+  private collectionRegions(data: BoundaryCollection): RegionRecord[] {
+    // GeoJSON 也包含九段线等没有行政编码的要素。
+    return data.features.flatMap((feature) => {
+      const region = this.getRegion(String(feature.properties.adcode));
+      return region ? [region] : [];
+    });
   }
 
   private read(path: string): Promise<BoundaryCollection> {

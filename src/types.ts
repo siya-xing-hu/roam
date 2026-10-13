@@ -94,4 +94,5 @@ export interface RegionRecord extends RegionTrailItem {
 export interface MapViewport {
   bounds: MapBounds;
   zoom: number;
+  center: [number, number];
 }

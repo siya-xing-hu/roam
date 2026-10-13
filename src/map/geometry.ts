@@ -4,6 +4,23 @@ import type { Attraction, BoundaryCollection, BoundaryFeature, MapBounds } from 
 const EARTH_RADIUS_KM = 6371;
 const radians = (degrees: number) => degrees * Math.PI / 180;
 
+export function pointInFeature(point: [number, number], feature: BoundaryFeature): boolean {
+  const inRing = (ring: number[][]): boolean => {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [x, y] = ring[i];
+      const [px, py] = ring[j];
+      const cross = (point[0] - x) * (py - y) - (point[1] - y) * (px - x);
+      if (Math.abs(cross) < 1e-10 && point[0] >= Math.min(x, px) && point[0] <= Math.max(x, px)
+        && point[1] >= Math.min(y, py) && point[1] <= Math.max(y, py)) return true;
+      if ((y > point[1]) !== (py > point[1]) && point[0] < (px - x) * (point[1] - y) / (py - y) + x) inside = !inside;
+    }
+    return inside;
+  };
+  const polygons = feature.geometry.type === "Polygon" ? [feature.geometry.coordinates] : feature.geometry.coordinates;
+  return polygons.some((rings) => inRing(rings[0]) && !rings.slice(1).some(inRing));
+}
+
 export function nearbyRegionBounds(bounds: MapBounds): MapBounds {
   // 周边随区域尺度外扩 20%，小区县至少外扩 20 公里，避免边界另一侧的景点突然消失。
   const latMargin = Math.max((bounds[3] - bounds[1]) * 0.2, 20 / EARTH_RADIUS_KM * 180 / Math.PI);

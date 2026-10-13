@@ -197,7 +197,7 @@ a:focus-visible {
   border: 1px solid rgba(151, 196, 180, 0.2);
   border-radius: 10px;
   background: #081915;
-  color: #edf5f1;
+  color: #ffd08a;
   font: 12px/1.7 system-ui, sans-serif;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
 }

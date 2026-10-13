@@ -1,4 +1,4 @@
-import { MAP_ZOOM } from "../config";
+import { DIRECT_DISTRICT_CODES, MAP_ZOOM } from "../config";
 import { BoundaryLoadError, BoundaryRepository } from "../data/boundaryRepository";
 import type { BoundaryCollection, BoundaryFeature, MapViewport, RegionRecord } from "../types";
 import { bufferedBounds, intersects } from "./geometry";
@@ -75,13 +75,14 @@ export class ViewportBoundaries {
         if (revision !== this.revision) return;
 
         const visibleCities: RegionRecord[] = [];
+        cities.push(...this.root.features.filter((feature) => DIRECT_DISTRICT_CODES.has(String(feature.properties.adcode))));
         for (const data of provinceChildren) {
           for (const feature of data.features) {
             const region = this.repository.getRegion(String(feature.properties.adcode));
             if (!region) continue;
             // 直辖市、省直辖县级单位不制造不存在的市级父节点。
-            if (region.level === "district" && viewport.zoom >= MAP_ZOOM.district) {
-              districts.push(feature);
+            if (region.level === "district") {
+              if (viewport.zoom >= MAP_ZOOM.district - 0.4) districts.push(feature);
             } else {
               cities.push(feature);
             }

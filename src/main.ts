@@ -4,7 +4,8 @@ import { AttractionStore, filterAttractions, visibleAttractions } from "./data/a
 import { BoundaryRepository } from "./data/boundaryRepository";
 import { MapView } from "./map/mapView";
 import { ViewportBoundaries } from "./map/viewportBoundaries";
-import type { Attraction, AttractionFilters, RegionTrailItem } from "./types";
+import { viewportAnchor } from "./map/viewportSelection";
+import type { Attraction, AttractionFilters, MapViewport, RegionTrailItem } from "./types";
 import { AppShell } from "./ui/appShell";
 
 const app = document.querySelector<HTMLElement>("#app");
@@ -21,6 +22,8 @@ let viewportBoundaries: ViewportBoundaries | null = null;
 let initializing = false;
 let renderError: string | null = null;
 let selectionRevision = 0;
+let viewportRevision = 0;
+let selectionAnchor: [number, number] | null = null;
 
 const shell = new AppShell(app, {
   onBack: () => navigateTo(trail.length - 2),
@@ -50,6 +53,7 @@ async function showAttraction(attraction: Attraction): Promise<void> {
     if (revision !== selectionRevision || !mapView) return;
     if (!region) throw new Error("尚未找到该景点所属的行政区域");
     trail = boundaries.getTrail(region.adcode);
+    selectionAnchor = [attraction.lng, attraction.lat];
     updateList();
     shell.showDetails(attraction);
     mapView.focusRegion(region, shell.getMapPadding());
@@ -79,8 +83,35 @@ function selectRegion(adcode: string, immediate = false): void {
   const region = boundaries.getRegion(adcode);
   if (!region || !mapView) return;
   trail = boundaries.getTrail(adcode);
+  selectionAnchor = [(region.bounds[0] + region.bounds[2]) / 2, (region.bounds[1] + region.bounds[3]) / 2];
   updateList();
   mapView.focusRegion(region, shell.getMapPadding(), immediate);
+}
+
+async function syncViewport(viewport: MapViewport, navigation: boolean): Promise<void> {
+  const revision = ++viewportRevision;
+  const selection = selectionRevision;
+  const current = boundaries.getRegion(trail.at(-1)?.adcode ?? ROOT_REGION.adcode);
+  if (!current || !mapView) return;
+  const isCurrent = () => revision === viewportRevision && selection === selectionRevision && Boolean(mapView);
+  try {
+    const anchor = viewportAnchor(viewport, selectionAnchor);
+    const region = navigation ? current : await boundaries.regionAtViewport(viewport, anchor, current.adcode);
+    if (!isCurrent()) return;
+    selectionAnchor = anchor;
+    if (region.adcode !== current.adcode) {
+      trail = boundaries.getTrail(region.adcode);
+      updateList();
+      // 自动切换只更新选区，不调用 fitBounds，保留用户刚调整的镜头。
+      mapView!.setRegion(region);
+    }
+    const neighbors = await boundaries.nearbyRegions(region, viewport);
+    if (!isCurrent()) return;
+    mapView!.setNearbyRegions(neighbors);
+  } catch (error) {
+    if (!isCurrent()) return;
+    shell.showStatus((error instanceof Error ? error.message : "周边区域加载失败") + "；继续缩放或拖动可重试", "error", false);
+  }
 }
 
 function navigateTo(index: number): void {
@@ -98,8 +129,12 @@ async function initialize(): Promise<void> {
       mapView = new MapView(shell.mapElement, {
         onRegionClick: selectRegion,
         onAttractionClick: showAttraction,
-        onViewportChange: (viewport) => viewportBoundaries?.update(viewport),
-        onAttractionLevelChange: (minimumLevel) => shell.updateMapLevel(minimumLevel),
+        onViewportChange: (viewport) => {
+          viewportRevision += 1;
+          viewportBoundaries?.update(viewport);
+        },
+        onViewportSettled: (viewport, navigation) => { void syncViewport(viewport, navigation); },
+        onAttractionDisplayChange: (display, region) => shell.updateMapDisplay(display, region),
         onError: (message) => {
           renderError = message;
           shell.showStatus(message, "error", false);
@@ -120,6 +155,7 @@ async function initialize(): Promise<void> {
     });
     selectRegion(ROOT_REGION.adcode, true);
     viewportBoundaries.update(mapView.getViewport());
+    void syncViewport(mapView.getViewport(), true);
     if (!renderError) shell.clearStatus();
   } catch (error) {
     viewportBoundaries?.destroy();
@@ -137,6 +173,7 @@ void initialize();
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {
     selectionRevision += 1;
+    viewportRevision += 1;
     viewportBoundaries?.destroy();
     mapView?.destroy();
   });

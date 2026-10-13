@@ -4,9 +4,7 @@ import type {
   AttractionFilters,
   BoundaryLevel,
   RegionContext,
-  RegionTrailItem,
 } from "../types";
-import { nearbyRegionBounds } from "../map/geometry";
 
 const DATASET_PATH = import.meta.env?.VITE_ATTRACTION_DATA_SOURCE === "static"
   ? "./data/attractions.json" : "/api/attractions";
@@ -53,21 +51,6 @@ export function visibleAttractions(
   return items
     .filter((item) => belongsToRegion(item, region))
     .sort((left, right) => right.level - left.level || left.name.localeCompare(right.name, "zh-CN"));
-}
-
-export function attractionLabelScope(items: Attraction[], region: RegionTrailItem | null): {
-  primaryIds: string[];
-  nearbyIds: string[];
-} {
-  if (!region || region.level === "country") return { primaryIds: items.map((item) => item.id), nearbyIds: [] };
-  const [west, south, east, north] = nearbyRegionBounds(region.bounds);
-  const primaryIds: string[] = [];
-  const nearbyIds: string[] = [];
-  for (const item of items) {
-    if (belongsToRegion(item, region)) primaryIds.push(item.id);
-    else if (item.lng >= west && item.lng <= east && item.lat >= south && item.lat <= north) nearbyIds.push(item.id);
-  }
-  return { primaryIds, nearbyIds };
 }
 
 export function filterAttractions(items: Attraction[], filters: AttractionFilters): Attraction[] {

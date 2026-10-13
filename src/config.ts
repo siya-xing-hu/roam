@@ -37,10 +37,3 @@ export const DIRECT_DISTRICT_CODES = new Set([
 ]);
 
 export const MAP_ZOOM = { province: 4, city: 6, district: 9 };
-
-export function minimumAttractionLevel(zoom: number): number {
-  if (zoom >= MAP_ZOOM.district) return 0;
-  if (zoom >= MAP_ZOOM.city) return 3;
-  if (zoom >= MAP_ZOOM.province) return 4;
-  return 5;
-}

@@ -2,10 +2,11 @@ import { LngLat, Map as LibreMap, Popup, setWorkerUrl, type FilterSpecification,
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { FeatureCollection, Point } from "geojson";
-import { LEVEL_COLORS, MAP_ZOOM, minimumAttractionLevel } from "../config";
-import { attractionLabelScope } from "../data/attractionStore";
-import type { Attraction, BoundaryCollection, BoundaryLevel, MapViewport, RegionTrailItem } from "../types";
+import { LEVEL_COLORS, MAP_ZOOM } from "../config";
+import { attractionDisplay, type AttractionDisplay } from "../data/attractionDisplay";
+import type { Attraction, BoundaryCollection, BoundaryLevel, MapViewport, RegionRecord } from "../types";
 import { boundaryLabelPoints } from "./geometry";
+import { displayRegionLevel } from "./viewportSelection";
 
 const LEVELS: BoundaryLevel[] = ["province", "city", "district"];
 const EMPTY: BoundaryCollection = { type: "FeatureCollection", features: [] };
@@ -17,7 +18,8 @@ interface MapCallbacks {
   onRegionClick: (adcode: string) => void;
   onAttractionClick: (attraction: Attraction) => void;
   onViewportChange: (viewport: MapViewport) => void;
-  onAttractionLevelChange: (minimumLevel: number) => void;
+  onViewportSettled: (viewport: MapViewport, navigation: boolean) => void;
+  onAttractionDisplayChange: (display: AttractionDisplay, region: RegionRecord) => void;
   onError: (message: string) => void;
 }
 
@@ -30,10 +32,10 @@ export class MapView {
     maxWidth: "240px", className: "map-tooltip selected-tooltip" });
   private readonly attractions = new Map<string, Attraction>();
   private filteredAttractions: Attraction[] = [];
-  private displayedMinimumLevel: number | null = null;
   private initialized = false;
   private resizeFrame = 0;
-  private selectedRegion: RegionTrailItem | null = null;
+  private selectedRegion: RegionRecord | null = null;
+  private nearbyRegions: RegionRecord[] = [];
   private selectedAttraction: string | null = null;
   private hovered: { source: string; id: string | number } | null = null;
   private tooltipId = "";
@@ -84,10 +86,13 @@ export class MapView {
       this.clearHover();
       if (this.initialized) this.callbacks.onViewportChange(this.getViewport());
     });
-    this.map.on("moveend", () => {
-      if (this.initialized) this.callbacks.onViewportChange(this.getViewport());
+    this.map.on("moveend", (event) => {
+      if (!this.initialized) return;
+      const viewport = this.getViewport();
+      this.updateAttractionVisibility();
+      this.callbacks.onViewportChange(viewport);
+      this.callbacks.onViewportSettled(viewport, Boolean((event as { regionFocus?: boolean }).regionFocus));
     });
-    this.map.on("zoom", () => this.updateAttractionVisibility());
     this.map.on("click", (event) => {
       if (!this.initialized) return;
       const features = this.featuresAt(event.point);
@@ -221,7 +226,7 @@ export class MapView {
         "text-allow-overlap": false,
         "symbol-sort-key": ["-", 9, ["get", "level"]],
       },
-      paint: { "text-color": "#e6eee8", "text-halo-color": "#071210", "text-halo-width": 2 },
+      paint: { "text-color": "#ffd08a", "text-halo-color": "#071210", "text-halo-width": 2 },
     });
     // 区域名称优先参与碰撞检测，景点名称自动避让，保留清晰的地理参照。
     for (const level of LEVELS) {
@@ -240,7 +245,7 @@ export class MapView {
           "text-allow-overlap": false,
         },
         paint: {
-          "text-color": level === "province" ? "#bcd9cb" : level === "city" ? "#accdbc" : "#9bbcaa",
+          "text-color": level === "province" ? "#83d8ff" : level === "city" ? "#73c8ee" : "#67bde5",
           "text-halo-color": "#071210", "text-halo-width": 2,
         },
       });
@@ -256,24 +261,41 @@ export class MapView {
   }
 
   getViewport(): MapViewport {
-    const bounds = this.map.getBounds();
-    return { bounds: [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()], zoom: this.map.getZoom() };
+    const { top = 0, bottom = 0, left = 0, right = 0 } = this.map.getPadding();
+    const canvas = this.map.getContainer();
+    // 以未被面板遮挡的地图判断范围，与点击区域时 fitBounds 的可见范围一致。
+    const nw = this.map.unproject([left, top]);
+    const se = this.map.unproject([canvas.clientWidth - right, canvas.clientHeight - bottom]);
+    const center = this.map.unproject([(left + canvas.clientWidth - right) / 2, (top + canvas.clientHeight - bottom) / 2]);
+    return { bounds: [nw.lng, se.lat, se.lng, nw.lat], zoom: this.map.getZoom(), center: [center.lng, center.lat] };
   }
 
-  focusRegion(region: RegionTrailItem, padding: PaddingOptions, immediate = false): void {
+  setRegion(region: RegionRecord): void {
     this.popup.remove();
     this.clearAttractionSelection();
     for (const level of LEVELS) {
-      if (this.selectedRegion) this.map.removeFeatureState({ source: level, id: this.selectedRegion.adcode }, "selected");
+      if (this.selectedRegion && this.selectedRegion.level !== "country") {
+        this.map.setFeatureState({ source: level, id: this.selectedRegion.adcode }, { selected: false });
+      }
       if (region.level !== "country") this.map.setFeatureState({ source: level, id: region.adcode }, { selected: true });
     }
-    this.selectedRegion = region.level === "country" ? null : region;
-    this.updateAttractionVisibility(true);
+    this.selectedRegion = region;
+    this.nearbyRegions = [];
+    this.updateAttractionVisibility();
+  }
+
+  setNearbyRegions(regions: RegionRecord[]): void {
+    this.nearbyRegions = regions;
+    this.updateAttractionVisibility();
+  }
+
+  focusRegion(region: RegionRecord, padding: PaddingOptions, immediate = false): void {
+    this.setRegion(region);
     const [west, south, east, north] = region.bounds;
     this.map.fitBounds([[west, south], [east, north]], {
-      padding, maxZoom: region.level === "district" ? 13 : region.level === "city" ? 10 : 8,
+      padding, maxZoom: region.level === "district" ? 13 : displayRegionLevel(region) === "city" ? 10 : 8,
       duration: immediate ? 0 : 550,
-    });
+    }, { regionFocus: true });
   }
 
   setAttractionFilter(attractions: Attraction[]): void {
@@ -282,36 +304,27 @@ export class MapView {
     if (this.selectedAttraction && !attractions.some((item) => item.id === this.selectedAttraction)) {
       this.clearAttractionSelection();
     }
-    this.updateAttractionVisibility(true);
+    this.updateAttractionVisibility();
   }
 
-  private updateAttractionVisibility(force = false): void {
-    if (!this.initialized) return;
-    const minimumLevel = minimumAttractionLevel(this.map.getZoom());
-    const changed = minimumLevel !== this.displayedMinimumLevel;
-    // 平移和同一档内缩放不重新筛选，只有跨档、筛选变化或选中目标变化才更新图层。
-    if (!force && !changed) return;
-    this.displayedMinimumLevel = minimumLevel;
-    const filter: FilterSpecification = ["all",
-      ["in", ["get", "id"], ["literal", this.filteredAttractions.map((item) => item.id)]],
-      ["any", [">=", ["get", "level"], minimumLevel],
-        ["==", ["get", "id"], this.selectedAttraction ?? ""]],
-    ];
-    this.map.setFilter("attraction-points", filter);
-    const { primaryIds, nearbyIds } = attractionLabelScope(this.filteredAttractions, this.selectedRegion);
-    this.map.setFilter("attraction-labels", ["all", filter,
-      ["in", ["get", "id"], ["literal", [...primaryIds, ...nearbyIds]]],
-    ]);
+  private updateAttractionVisibility(): void {
+    if (!this.initialized || !this.selectedRegion) return;
+    const display = attractionDisplay(this.filteredAttractions, this.selectedRegion, this.nearbyRegions,
+      this.getViewport().bounds, this.selectedAttraction);
+    const { primaryIds, nearbyNamedIds, nearbyUnnamedIds } = display;
+    const idsFilter = (ids: string[]): FilterSpecification => ["in", ["get", "id"], ["literal", ids]];
+    this.map.setFilter("attraction-points", idsFilter([...primaryIds, ...nearbyNamedIds, ...nearbyUnnamedIds]));
+    this.map.setFilter("attraction-labels", idsFilter([...primaryIds, ...nearbyNamedIds]));
     this.map.setLayoutProperty("attraction-labels", "symbol-sort-key", ["+",
       ["case", ["in", ["get", "id"], ["literal", primaryIds]], 0, 100],
       ["-", 9, ["get", "level"]],
     ]);
     this.map.setPaintProperty("attraction-labels", "text-color", ["case",
-      ["in", ["get", "id"], ["literal", primaryIds]], "#e6eee8", "#9fb5aa",
+      ["in", ["get", "id"], ["literal", primaryIds]], "#ffd08a", "#cca978",
     ]);
     this.popup.remove();
     this.clearHover();
-    if (changed) this.callbacks.onAttractionLevelChange(minimumLevel);
+    this.callbacks.onAttractionDisplayChange(display, this.selectedRegion);
   }
 
   selectAttraction(attraction: Attraction): void {
@@ -319,7 +332,7 @@ export class MapView {
     this.popup.remove();
     this.selectedAttraction = attraction.id;
     this.map.setFeatureState({ source: "attractions", id: attraction.id }, { selected: true });
-    this.updateAttractionVisibility(true);
+    this.updateAttractionVisibility();
     const content = document.createElement("div");
     const title = document.createElement("strong");
     title.textContent = attraction.name;
@@ -329,7 +342,7 @@ export class MapView {
 
   private clearAttractionSelection(): void {
     if (this.selectedAttraction) {
-      this.map.removeFeatureState({ source: "attractions", id: this.selectedAttraction }, "selected");
+      this.map.setFeatureState({ source: "attractions", id: this.selectedAttraction }, { selected: false });
     }
     this.selectedAttraction = null;
     this.selectedPopup.remove();
@@ -342,7 +355,7 @@ export class MapView {
   }
 
   private clearHover(): void {
-    if (this.hovered) this.map.removeFeatureState(this.hovered, "hover");
+    if (this.hovered) this.map.setFeatureState(this.hovered, { hover: false });
     this.hovered = null;
     this.map.getCanvas().style.cursor = "";
   }

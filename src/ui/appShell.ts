@@ -1,6 +1,8 @@
 import { APP_NAME, LEVEL_COLORS, LEVEL_LABELS } from "../config";
 import { belongsToRegion, boundaryLevelLabel } from "../data/attractionStore";
-import type { Attraction, AttractionDataset, AttractionFilters, RegionTrailItem } from "../types";
+import type { AttractionDisplay } from "../data/attractionDisplay";
+import { displayRegionLevel } from "../map/viewportSelection";
+import type { Attraction, AttractionDataset, AttractionFilters, RegionRecord, RegionTrailItem } from "../types";
 
 interface ShellCallbacks {
   onBack: () => void;
@@ -147,7 +149,7 @@ export class AppShell {
     const backButton = this.app.querySelector<HTMLButtonElement>("#back-button");
 
     if (regionName) regionName.textContent = current.name;
-    if (boundaryLevel) boundaryLevel.textContent = `${current.name} · ${boundaryLevelLabel(current.level)}`;
+    if (boundaryLevel) boundaryLevel.textContent = `${current.name} · ${boundaryLevelLabel(displayRegionLevel(current))}`;
     if (visibleCount) visibleCount.textContent = `列表 ${attractions.length} 个`;
     const summary = this.app.querySelector<HTMLElement>("#filter-summary");
     if (summary) summary.textContent = `当前列表 ${attractions.length} 处 · 点击进入景点所在区域`;
@@ -159,15 +161,17 @@ export class AppShell {
     this.hideDetails();
   }
 
-  updateMapLevel(minimumLevel: number): void {
-    const message = minimumLevel > 0
-      ? `缩放门槛：${minimumLevel} 级及以上 · 放大可见更多`
-      : "缩放门槛：全部等级（含未评级）";
+  updateMapDisplay(display: AttractionDisplay, region: RegionRecord): void {
+    const leaf = region.level === "district" || !region.childrenNum;
+    const message = region.level === "country"
+      ? `全国视角 · 显示全部 5 级及以上景点 · 画面内 ${display.primaryIds.length} 处`
+      : `画面内本区 ${display.primaryIds.length} 处${leaf ? "" : "（最多 20）"}`
+      + ` · 周边 ${display.nearbyNamedIds.length} 处带名称 + ${display.nearbyUnnamedIds.length} 处点位`;
     for (const selector of ["#threshold-note", "#map-level-note"]) {
       const note = this.app.querySelector<HTMLElement>(selector);
       if (!note) continue;
       note.textContent = message;
-      note.title = "与手动等级筛选共同生效；主动选中的景点保留定位标记";
+      note.title = "全国显示全部 5 级及以上景点；最小区域保留全部点位；市、省按等级显示前 20 处；周边合计最多 20 个名称和 20 个点位。等级筛选仍然生效，名称会自动避让。";
     }
   }
 
@@ -269,7 +273,7 @@ export class AppShell {
     const covered = count > 0;
     note.className = `coverage-note ${covered ? "is-covered" : "is-uncovered"}`;
     note.textContent = covered
-      ? `已收录${region.name} ${count} 处景点；拖动地图不改变此列表`
+      ? `已收录${region.name} ${count} 处景点；缩放地图自动切换区域`
       : `${region.name}的景点数据尚未收录`;
   }
 
