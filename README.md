@@ -26,7 +26,11 @@ npm run dev
 npm run build
 ```
 
-Vercel 选择 Vite，保留根目录 `api/attractions.ts` 为 Node.js Function，并配置仅服务端可见的 `DATABASE_URL`。该连接必须指向 Vercel 能访问的 PostgreSQL（例如托管数据库），本机 `127.0.0.1` 仅供本地开发。数据库结构和数据用独立迁移账号提前导入，构建过程不会自动改库。托管数据库初始化账号和只读权限的方式见共享 PostgreSQL 文档。
+Netlify 导入 GitHub 仓库并选择 `main` 分支，仓库内的 `netlify.toml` 会设置 Node.js 22、构建命令 `npm run build`、发布目录 `dist` 和函数目录 `netlify/functions`。景点函数通过 `/api/attractions` 提供接口。在 Netlify 环境变量中配置 `DATABASE_URL`，确保作用域包含 Functions；修改后重新部署。
+
+Vercel 同样可用：选择 Vite，并保留根目录 `api/attractions.ts` 为 Node.js Function，配置仅服务端可见的 `DATABASE_URL`。
+
+线上 `DATABASE_URL` 必须指向部署平台能访问的 PostgreSQL（例如托管数据库），并使用只读应用账号；本机 `127.0.0.1` 仅供本地开发。数据库结构和数据用独立迁移账号提前导入，构建过程不会自动改库。托管数据库初始化账号和只读权限的方式见 [共享 PostgreSQL](infra/postgres/README.md)。
 
 需要纯静态快照时，显式使用 `VITE_ATTRACTION_DATA_SOURCE=static npm run build`；默认模式请求 `/api/attractions`，数据库出错不会静默切回旧 JSON。
 

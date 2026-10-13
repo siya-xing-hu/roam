@@ -18,5 +18,5 @@
     "noFallthroughCasesInSwitch": true,
     "noEmit": true
   },
-  "include": ["src", "tests", "server", "api", "tools/database", "vite.config.ts"]
+  "include": ["src", "tests", "server", "api", "netlify/functions", "tools/database", "vite.config.ts"]
 }

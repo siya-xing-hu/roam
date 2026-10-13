@@ -10,3 +10,4 @@ __pycache__/
 tools/attraction-generator/tmp/
 infra/postgres/.secrets/
 infra/postgres/backups/
+.netlify/
