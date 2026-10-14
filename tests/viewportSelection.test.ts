@@ -35,14 +35,38 @@ describe("缩放时自动切换所选行政区域", () => {
     expect((await repo.regionAtViewport(view(district.bounds, 10), pearl, "100000")).adcode).toBe("310115");
   });
 
-  it("上海市的周边按市划分，包含苏州、嘉兴，排除上海内部区县", async () => {
+  it("选中上海市时周边提高到省级，包含江苏、浙江", async () => {
     const repo = new BoundaryRepository();
     await repo.loadRoot();
     const city = repo.getRegion("310000")!;
     const adjacent = await repo.nearbyRegions(city, view(city.bounds, 8, 1.6));
-    expect(adjacent.map((r) => r.adcode)).toEqual(expect.arrayContaining(["320500", "330400"]));
+    expect(adjacent.map((r) => r.adcode)).toEqual(expect.arrayContaining(["320000", "330000"]));
     expect(adjacent.some((r) => r.adcode.startsWith("31"))).toBe(false);
-    expect(adjacent.every((r) => displayRegionLevel(r) === "city")).toBe(true);
+    expect(adjacent.every((r) => r.level === "province")).toBe(true);
+  });
+
+  it("选中松江保留上海其他区，跨市使用嘉兴和苏州，不加载嘉善县", async () => {
+    const repo = new BoundaryRepository();
+    const songjiang = (await repo.resolveRegion("310117"))!;
+    const adjacent = await repo.nearbyRegions(songjiang, view(songjiang.bounds, 10, 2));
+    const codes = adjacent.map((r) => r.adcode);
+    expect(codes).toEqual(expect.arrayContaining(["310112", "310118", "320500", "330400"]));
+    expect(codes).not.toContain("310117");
+    expect(codes).not.toContain("310000");
+    expect(codes).not.toContain("330421");
+    expect(adjacent.filter((r) => !r.adcode.startsWith("31")).every((r) => displayRegionLevel(r) === "city")).toBe(true);
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes("counties/330400"))).toBe(false);
+  });
+
+  it("选中嘉兴时浙江内部保留市，省外显示上海和江苏", async () => {
+    const repo = new BoundaryRepository();
+    const jiaxing = (await repo.resolveRegion("330400"))!;
+    const adjacent = await repo.nearbyRegions(jiaxing, view(jiaxing.bounds, 8, 2));
+    const codes = adjacent.map((r) => r.adcode);
+    expect(codes).toEqual(expect.arrayContaining(["330100", "330500", "310000", "320000"]));
+    expect(codes).not.toContain("330400");
+    expect(codes).not.toContain("330000");
+    expect(codes).not.toContain("320500");
   });
 
   it("普通省份保留省级范围，临界小幅缩放不会反复跳级", async () => {

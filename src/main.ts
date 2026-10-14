@@ -57,6 +57,7 @@ async function showAttraction(attraction: Attraction): Promise<void> {
     updateList();
     shell.showDetails(attraction);
     mapView.focusRegion(region, shell.getMapPadding());
+    viewportBoundaries?.update(mapView.getViewport(), region);
     mapView.selectAttraction(attraction);
   } catch (error) {
     if (revision !== selectionRevision) return;
@@ -86,6 +87,7 @@ function selectRegion(adcode: string, immediate = false): void {
   selectionAnchor = [(region.bounds[0] + region.bounds[2]) / 2, (region.bounds[1] + region.bounds[3]) / 2];
   updateList();
   mapView.focusRegion(region, shell.getMapPadding(), immediate);
+  viewportBoundaries?.update(mapView.getViewport(), region);
 }
 
 async function syncViewport(viewport: MapViewport, navigation: boolean): Promise<void> {
@@ -104,6 +106,7 @@ async function syncViewport(viewport: MapViewport, navigation: boolean): Promise
       updateList();
       // 自动切换只更新选区，不调用 fitBounds，保留用户刚调整的镜头。
       mapView!.setRegion(region);
+      viewportBoundaries?.update(viewport, region);
     }
     const neighbors = await boundaries.nearbyRegions(region, viewport);
     if (!isCurrent()) return;
@@ -131,7 +134,7 @@ async function initialize(): Promise<void> {
         onAttractionClick: showAttraction,
         onViewportChange: (viewport) => {
           viewportRevision += 1;
-          viewportBoundaries?.update(viewport);
+          viewportBoundaries?.update(viewport, boundaries.getRegion(trail.at(-1)?.adcode ?? ROOT_REGION.adcode) ?? null);
         },
         onViewportSettled: (viewport, navigation) => { void syncViewport(viewport, navigation); },
         onAttractionDisplayChange: (display, region) => shell.updateMapDisplay(display, region),

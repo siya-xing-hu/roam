@@ -1,6 +1,7 @@
 import { DIRECT_DISTRICT_CODES, ROOT_REGION } from "../config";
 import { collectionBounds, featureBounds, intersects, nearbyRegionBounds, pointInFeature } from "../map/geometry";
-import { displayRegionLevel, regionFitsViewport } from "../map/viewportSelection";
+import { regionFitsViewport } from "../map/viewportSelection";
+import { boundaryScope } from "../map/boundaryPresentation";
 import type { BoundaryCollection, MapViewport, RegionRecord, RegionTrailItem } from "../types";
 
 const BASE = "./data/boundaries/";
@@ -76,29 +77,29 @@ export class BoundaryRepository {
 
   async nearbyRegions(region: RegionRecord, viewport: MapViewport): Promise<RegionRecord[]> {
     if (region.level === "country") return [];
-    const scope = nearbyRegionBounds(region.bounds);
-    const isNearby = (candidate: RegionRecord) => intersects(candidate.bounds, scope) && intersects(candidate.bounds, viewport.bounds);
+    const nearbyBounds = nearbyRegionBounds(region.bounds);
+    const isNearby = (candidate: RegionRecord) => intersects(candidate.bounds, nearbyBounds) && intersects(candidate.bounds, viewport.bounds);
     const root = await this.loadRoot();
     const provinces = this.collectionRegions(root).filter(isNearby);
-    const level = displayRegionLevel(region);
+    const scope = boundaryScope(region);
     let candidates: RegionRecord[];
-    if (level === "province") {
+    if (scope.detail === "province") {
       candidates = provinces;
+    } else if (scope.detail === "city") {
+      const parent = this.getRegion(scope.parentAdcode!);
+      const siblings = parent ? this.collectionRegions(await this.loadChildren(parent)) : [];
+      candidates = [...siblings, ...provinces.filter((province) => province.adcode !== scope.parentAdcode)];
     } else {
-      const children = (await Promise.all(provinces.map((province) => this.loadChildren(province))))
+      const children = (await Promise.all(provinces.filter((province) => !DIRECT_DISTRICT_CODES.has(province.adcode))
+        .map((province) => this.loadChildren(province))))
         .flatMap((data) => this.collectionRegions(data));
-      if (level === "city") {
-        // 上海等直辖市本身就是市级展示单元，不把其区县当作周边城市。
-        candidates = [...provinces.filter((province) => DIRECT_DISTRICT_CODES.has(province.adcode)),
-          ...children.filter((child) => child.level === "city")];
-      } else {
-        const cities = children.filter((child) => child.level === "city" && isNearby(child));
-        const districts = (await Promise.all(cities.map((city) => this.loadChildren(city))))
-          .flatMap((data) => this.collectionRegions(data));
-        candidates = [...children.filter((child) => child.level === "district" || !child.childrenNum), ...districts];
-      }
+      const cities = [...provinces.filter((province) => DIRECT_DISTRICT_CODES.has(province.adcode)), ...children];
+      const parent = this.getRegion(scope.parentAdcode!);
+      const siblings = parent ? this.collectionRegions(await this.loadChildren(parent)) : [];
+      candidates = [...cities.filter((city) => city.adcode !== scope.parentAdcode), ...siblings];
     }
-    return candidates.filter((candidate) => candidate.adcode !== region.adcode && isNearby(candidate));
+    return [...new Map(candidates.map((candidate) => [candidate.adcode, candidate])).values()]
+      .filter((candidate) => candidate.adcode !== region.adcode && isNearby(candidate));
   }
 
   async resolveRegion(adcode: string): Promise<RegionRecord | undefined> {

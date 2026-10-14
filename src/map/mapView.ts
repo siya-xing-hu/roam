@@ -2,11 +2,12 @@ import { LngLat, Map as LibreMap, Popup, setWorkerUrl, type FilterSpecification,
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { FeatureCollection, Point } from "geojson";
-import { LEVEL_COLORS, MAP_ZOOM } from "../config";
+import { LEVEL_COLORS } from "../config";
 import { attractionDisplay, type AttractionDisplay } from "../data/attractionDisplay";
-import type { Attraction, BoundaryCollection, BoundaryLevel, MapViewport, RegionRecord } from "../types";
+import type { Attraction, BoundaryCollection, BoundaryLevel, MapBounds, MapViewport, RegionRecord } from "../types";
 import { boundaryLabelPoints } from "./geometry";
 import { displayRegionLevel } from "./viewportSelection";
+import { presentedBoundaries } from "./boundaryPresentation";
 
 const LEVELS: BoundaryLevel[] = ["province", "city", "district"];
 const EMPTY: BoundaryCollection = { type: "FeatureCollection", features: [] };
@@ -35,6 +36,7 @@ export class MapView {
   private initialized = false;
   private resizeFrame = 0;
   private selectedRegion: RegionRecord | null = null;
+  private readonly boundaryData: Record<BoundaryLevel, BoundaryCollection> = { province: EMPTY, city: EMPTY, district: EMPTY };
   private nearbyRegions: RegionRecord[] = [];
   private selectedAttraction: string | null = null;
   private hovered: { source: string; id: string | number } | null = null;
@@ -89,6 +91,7 @@ export class MapView {
     this.map.on("moveend", (event) => {
       if (!this.initialized) return;
       const viewport = this.getViewport();
+      this.updateBoundaryVisibility();
       this.updateAttractionVisibility();
       this.callbacks.onViewportChange(viewport);
       this.callbacks.onViewportSettled(viewport, Boolean((event as { regionFocus?: boolean }).regionFocus));
@@ -160,12 +163,12 @@ export class MapView {
 
   initialize(root: BoundaryCollection, attractions: Attraction[]): void {
     if (this.initialized) return;
+    this.boundaryData.province = root;
     for (const level of LEVELS) {
       const data = level === "province" ? root : EMPTY;
-      const minzoom = level === "province" ? 0 : MAP_ZOOM[level];
       this.map.addSource(level, { type: "geojson", data, promoteId: "adcode", maxzoom: 12, tolerance: 0.5 });
       this.map.addLayer({
-        id: level + "-fill", type: "fill", source: level, minzoom,
+        id: level + "-fill", type: "fill", source: level,
         paint: {
           "fill-color": level === "province" ? "#102823" : "#45856e",
           "fill-opacity": level === "province" ? 1 : [
@@ -175,7 +178,7 @@ export class MapView {
         },
       });
       this.map.addLayer({
-        id: level + "-line", type: "line", source: level, minzoom,
+        id: level + "-line", type: "line", source: level,
         paint: {
           "line-color": ["case", ["boolean", ["feature-state", "selected"], false], "#87dec0",
             ["boolean", ["feature-state", "hover"], false], "#91bcac",
@@ -236,8 +239,6 @@ export class MapView {
       });
       this.map.addLayer({
         id: level + "-labels", type: "symbol", source: level + "-label-points",
-        minzoom: level === "province" ? 0 : MAP_ZOOM[level],
-        maxzoom: level === "province" ? MAP_ZOOM.city : level === "city" ? MAP_ZOOM.district : 24,
         layout: {
           "text-field": ["get", "name"], "text-font": FONT,
           "text-size": level === "province" ? 14 : level === "city" ? 13 : 12,
@@ -251,13 +252,34 @@ export class MapView {
       });
     }
     this.initialized = true;
+    this.updateBoundaryVisibility();
     this.updateAttractionVisibility();
   }
 
   setBoundaries(level: "city" | "district", data: BoundaryCollection): void {
     this.clearHover();
+    this.boundaryData[level] = data;
     (this.map.getSource(level) as GeoJSONSource).setData(data);
-    (this.map.getSource(level + "-label-points") as GeoJSONSource).setData(boundaryLabelPoints(data));
+    this.updateBoundaryVisibility();
+  }
+
+  private updateBoundaryVisibility(): void {
+    if (!this.initialized) return;
+    const [west, south, east, north] = this.getViewport().bounds;
+    const dx = (east - west) * 0.03;
+    const dy = (north - south) * 0.04;
+    const labelBounds: MapBounds = [west + dx, south + dy, east - dx, north - dy];
+    for (const level of LEVELS) {
+      const features = this.boundaryData[level].features;
+      const filter = (labels: boolean): FilterSpecification => ["in", ["to-string", ["get", "adcode"]], ["literal",
+        presentedBoundaries(features, level, this.selectedRegion, labels).map((feature) => String(feature.properties.adcode))]];
+      this.map.setFilter(level + "-fill", filter(false));
+      this.map.setFilter(level + "-line", filter(false));
+      this.map.setFilter(level + "-labels", filter(true));
+      (this.map.getSource(level + "-label-points") as GeoJSONSource).setData(boundaryLabelPoints({
+        type: "FeatureCollection", features: presentedBoundaries(features, level, this.selectedRegion, true),
+      }, labelBounds));
+    }
   }
 
   getViewport(): MapViewport {
@@ -280,6 +302,7 @@ export class MapView {
       if (region.level !== "country") this.map.setFeatureState({ source: level, id: region.adcode }, { selected: true });
     }
     this.selectedRegion = region;
+    this.updateBoundaryVisibility();
     this.nearbyRegions = [];
     this.updateAttractionVisibility();
   }

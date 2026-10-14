@@ -1,14 +1,16 @@
-import { DIRECT_DISTRICT_CODES, MAP_ZOOM } from "../config";
+import { DIRECT_DISTRICT_CODES } from "../config";
 import { BoundaryLoadError, BoundaryRepository } from "../data/boundaryRepository";
 import type { BoundaryCollection, BoundaryFeature, MapViewport, RegionRecord } from "../types";
 import { bufferedBounds, intersects } from "./geometry";
-import { MapView } from "./mapView";
+import type { MapView } from "./mapView";
+import { boundaryScope } from "./boundaryPresentation";
 
 const RETRY_DELAYS = [1_000, 3_000, 8_000];
 interface LoadFailure { message: string; attempts: number; retryAt: number }
 
 export class ViewportBoundaries {
   private viewport: MapViewport | null = null;
+  private selectedRegion: RegionRecord | null = null;
   private revision = 0;
   private running = false;
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -26,8 +28,9 @@ export class ViewportBoundaries {
     window.addEventListener("online", this.onOnline);
   }
 
-  update(viewport: MapViewport): void {
+  update(viewport: MapViewport, region: RegionRecord | null = this.selectedRegion): void {
     this.viewport = viewport;
+    this.selectedRegion = region;
     this.revision += 1;
     this.schedule();
   }
@@ -60,38 +63,38 @@ export class ViewportBoundaries {
     const revision = this.revision;
     const viewport = this.viewport;
     const bounds = bufferedBounds(viewport.bounds);
+    const scope = boundaryScope(this.selectedRegion);
     const cities: BoundaryFeature[] = [];
     const districts: BoundaryFeature[] = [];
     const errors: string[] = [];
     const requestedPaths = new Set<string>();
 
     try {
-      if (viewport.zoom >= MAP_ZOOM.city - 0.4) {
+      if (scope.detail !== "province") {
         const provinces = this.root.features.flatMap((feature) => {
           const region = this.repository.getRegion(String(feature.properties.adcode));
-          return region && intersects(region.bounds, bounds) ? [region] : [];
+          return region && (scope.detail === "city" ? region.adcode === scope.parentAdcode
+            : intersects(region.bounds, bounds)) ? [region] : [];
         });
-        const provinceChildren = await this.loadMany(provinces, revision, errors, requestedPaths);
+        // 区县视角只加载目标城市的区县，其他城市不再递归展开。
+        const provinceChildren = await this.loadMany(provinces.filter((province) =>
+          !DIRECT_DISTRICT_CODES.has(province.adcode)), revision, errors, requestedPaths);
         if (revision !== this.revision) return;
 
-        const visibleCities: RegionRecord[] = [];
-        cities.push(...this.root.features.filter((feature) => DIRECT_DISTRICT_CODES.has(String(feature.properties.adcode))));
+        if (scope.detail === "district") {
+          cities.push(...this.root.features.filter((feature) => DIRECT_DISTRICT_CODES.has(String(feature.properties.adcode))));
+        }
         for (const data of provinceChildren) {
           for (const feature of data.features) {
             const region = this.repository.getRegion(String(feature.properties.adcode));
             if (!region) continue;
-            // 直辖市、省直辖县级单位不制造不存在的市级父节点。
-            if (region.level === "district") {
-              if (viewport.zoom >= MAP_ZOOM.district - 0.4) districts.push(feature);
-            } else {
-              cities.push(feature);
-            }
-            if (region.level === "city" && intersects(region.bounds, bounds)) visibleCities.push(region);
+            cities.push(feature);
           }
         }
-        if (viewport.zoom >= MAP_ZOOM.district - 0.4) {
-          const cityChildren = await this.loadMany(visibleCities, revision, errors, requestedPaths);
-          for (const data of cityChildren) districts.push(...data.features);
+        if (scope.detail === "district" && scope.parentAdcode) {
+          const parent = this.repository.getRegion(scope.parentAdcode);
+          const cityChildren = await this.loadMany(parent ? [parent] : [], revision, errors, requestedPaths);
+          for (const data of cityChildren) districts.push(...data.features.filter((feature) => feature.properties.level === "district"));
         }
       }
       if (revision !== this.revision) return;

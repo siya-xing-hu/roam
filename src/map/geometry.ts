@@ -29,15 +29,37 @@ export function nearbyRegionBounds(bounds: MapBounds): MapBounds {
   return [bounds[0] - lngMargin, bounds[1] - latMargin, bounds[2] + lngMargin, bounds[3] + latMargin];
 }
 
-export function boundaryLabelPoints(data: BoundaryCollection): FeatureCollection<Point> {
+function visibleLabelPoint(feature: BoundaryFeature, preferred: [number, number], viewport: MapBounds): [number, number] | null {
+  if (preferred[0] >= viewport[0] && preferred[0] <= viewport[2]
+    && preferred[1] >= viewport[1] && preferred[1] <= viewport[3]) return preferred;
+  const bounds = featureBounds(feature);
+  if (!intersects(bounds, viewport)) return null;
+  const west = Math.max(bounds[0], viewport[0]);
+  const south = Math.max(bounds[1], viewport[1]);
+  const east = Math.min(bounds[2], viewport[2]);
+  const north = Math.min(bounds[3], viewport[3]);
+  // 城市中心在屏幕外时，在可见部分找一个位于实际多边形内的标注点。
+  for (const y of [0.5, 0.3, 0.7, 0.1, 0.9]) {
+    for (const x of [0.5, 0.3, 0.7, 0.1, 0.9]) {
+      const point: [number, number] = [west + (east - west) * x, south + (north - south) * y];
+      if (pointInFeature(point, feature)) return point;
+    }
+  }
+  return null;
+}
+
+export function boundaryLabelPoints(data: BoundaryCollection, viewport?: MapBounds): FeatureCollection<Point> {
   return {
     type: "FeatureCollection",
-    features: data.features.flatMap(({ properties }) => {
+    features: data.features.flatMap((feature) => {
+      const { properties } = feature;
       const adcode = String(properties.adcode);
-      const coordinates = [properties.centroid, properties.center].find((point) => point
+      const preferred = [properties.centroid, properties.center].find((point) => point
         && point.length === 2 && point.every(Number.isFinite)
         && Math.abs(point[0]) <= 180 && Math.abs(point[1]) <= 90);
-      if (!properties.name?.trim() || !/^\d{6}$/.test(adcode) || !coordinates) return [];
+      if (!properties.name?.trim() || !/^\d{6}$/.test(adcode) || !preferred) return [];
+      const coordinates = viewport ? visibleLabelPoint(feature, preferred, viewport) : preferred;
+      if (!coordinates) return [];
       // 每个区域只用一个标注点，避免多岛屿、多块边界重复标注名称。
       return [{
         type: "Feature" as const, id: adcode,
