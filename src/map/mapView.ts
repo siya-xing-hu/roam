@@ -8,6 +8,7 @@ import type { Attraction, BoundaryCollection, BoundaryLevel, MapBounds, MapViewp
 import { boundaryLabelPoints } from "./geometry";
 import { displayRegionLevel } from "./viewportSelection";
 import { presentedBoundaries } from "./boundaryPresentation";
+import { viewportZones } from "./viewportZones";
 
 const LEVELS: BoundaryLevel[] = ["province", "city", "district"];
 const EMPTY: BoundaryCollection = { type: "FeatureCollection", features: [] };
@@ -16,11 +17,12 @@ const FONT = ["sans-serif"];
 setWorkerUrl(workerUrl);
 
 interface MapCallbacks {
+  getMapPadding: () => PaddingOptions;
   onRegionClick: (adcode: string) => void;
   onAttractionClick: (attraction: Attraction) => void;
   onViewportChange: (viewport: MapViewport) => void;
   onViewportSettled: (viewport: MapViewport, navigation: boolean) => void;
-  onAttractionDisplayChange: (display: AttractionDisplay, region: RegionRecord) => void;
+  onAttractionDisplayChange: (display: AttractionDisplay) => void;
   onError: (message: string) => void;
 }
 
@@ -35,9 +37,10 @@ export class MapView {
   private filteredAttractions: Attraction[] = [];
   private initialized = false;
   private resizeFrame = 0;
+  private attractionFrame = 0;
+  private attractionSignature = "";
   private selectedRegion: RegionRecord | null = null;
   private readonly boundaryData: Record<BoundaryLevel, BoundaryCollection> = { province: EMPTY, city: EMPTY, district: EMPTY };
-  private nearbyRegions: RegionRecord[] = [];
   private selectedAttraction: string | null = null;
   private hovered: { source: string; id: string | number } | null = null;
   private tooltipId = "";
@@ -80,16 +83,24 @@ export class MapView {
     });
     this.resizeObserver = new ResizeObserver(() => {
       cancelAnimationFrame(this.resizeFrame);
-      this.resizeFrame = requestAnimationFrame(() => this.map.resize());
+      this.resizeFrame = requestAnimationFrame(() => {
+        this.map.resize();
+        this.updatePadding();
+      });
     });
     this.resizeObserver.observe(container);
     this.map.on("move", () => {
       this.popup.remove();
       this.clearHover();
-      if (this.initialized) this.callbacks.onViewportChange(this.getViewport());
+      if (this.initialized) {
+        this.scheduleAttractionVisibility();
+        this.callbacks.onViewportChange(this.getViewport());
+      }
     });
     this.map.on("moveend", (event) => {
       if (!this.initialized) return;
+      cancelAnimationFrame(this.attractionFrame);
+      this.attractionFrame = 0;
       const viewport = this.getViewport();
       this.updateBoundaryVisibility();
       this.updateAttractionVisibility();
@@ -292,6 +303,10 @@ export class MapView {
     return { bounds: [nw.lng, se.lat, se.lng, nw.lat], zoom: this.map.getZoom(), center: [center.lng, center.lat] };
   }
 
+  updatePadding(): void {
+    if (this.initialized) this.map.setPadding(this.callbacks.getMapPadding(), { regionFocus: true });
+  }
+
   setRegion(region: RegionRecord): void {
     this.popup.remove();
     this.clearAttractionSelection();
@@ -303,12 +318,6 @@ export class MapView {
     }
     this.selectedRegion = region;
     this.updateBoundaryVisibility();
-    this.nearbyRegions = [];
-    this.updateAttractionVisibility();
-  }
-
-  setNearbyRegions(regions: RegionRecord[]): void {
-    this.nearbyRegions = regions;
     this.updateAttractionVisibility();
   }
 
@@ -330,24 +339,37 @@ export class MapView {
     this.updateAttractionVisibility();
   }
 
+  private scheduleAttractionVisibility(): void {
+    if (this.attractionFrame) return;
+    this.attractionFrame = requestAnimationFrame(() => {
+      this.attractionFrame = 0;
+      this.updateAttractionVisibility();
+    });
+  }
+
   private updateAttractionVisibility(): void {
-    if (!this.initialized || !this.selectedRegion) return;
-    const display = attractionDisplay(this.filteredAttractions, this.selectedRegion, this.nearbyRegions,
-      this.getViewport().bounds, this.selectedAttraction);
-    const { primaryIds, nearbyNamedIds, nearbyUnnamedIds } = display;
+    if (!this.initialized) return;
+    const display = attractionDisplay(this.filteredAttractions, viewportZones(this.getViewport().bounds), this.selectedAttraction);
+    const signature = JSON.stringify(display);
+    if (signature === this.attractionSignature) return;
+    this.attractionSignature = signature;
+    const { coreIds, edgeIds, bufferIds } = display;
+    // 缓冲点已进入图层，拖到屏幕内即可绘制，不等待行政边界请求或 moveend。
+    const ids = [...coreIds, ...edgeIds, ...bufferIds];
     const idsFilter = (ids: string[]): FilterSpecification => ["in", ["get", "id"], ["literal", ids]];
-    this.map.setFilter("attraction-points", idsFilter([...primaryIds, ...nearbyNamedIds, ...nearbyUnnamedIds]));
-    this.map.setFilter("attraction-labels", idsFilter([...primaryIds, ...nearbyNamedIds]));
+    this.map.setFilter("attraction-points", idsFilter(ids));
+    this.map.setFilter("attraction-labels", idsFilter(ids));
     this.map.setLayoutProperty("attraction-labels", "symbol-sort-key", ["+",
-      ["case", ["in", ["get", "id"], ["literal", primaryIds]], 0, 100],
+      ["case", ["in", ["get", "id"], ["literal", coreIds]], 0,
+        ["in", ["get", "id"], ["literal", edgeIds]], 100, 200],
       ["-", 9, ["get", "level"]],
     ]);
     this.map.setPaintProperty("attraction-labels", "text-color", ["case",
-      ["in", ["get", "id"], ["literal", primaryIds]], "#ffd08a", "#cca978",
+      ["in", ["get", "id"], ["literal", coreIds]], "#ffd08a", "#cca978",
     ]);
     this.popup.remove();
     this.clearHover();
-    this.callbacks.onAttractionDisplayChange(display, this.selectedRegion);
+    this.callbacks.onAttractionDisplayChange(display);
   }
 
   selectAttraction(attraction: Attraction): void {
@@ -385,6 +407,7 @@ export class MapView {
 
   destroy(): void {
     cancelAnimationFrame(this.resizeFrame);
+    cancelAnimationFrame(this.attractionFrame);
     this.resizeObserver.disconnect();
     this.popup.remove();
     this.selectedPopup.remove();

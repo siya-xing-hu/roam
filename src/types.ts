@@ -89,6 +89,7 @@ export type MapBounds = [west: number, south: number, east: number, north: numbe
 export interface RegionRecord extends RegionTrailItem {
   parentAdcode?: string;
   childrenNum: number;
+  anchor?: [number, number];
 }
 
 export interface MapViewport {

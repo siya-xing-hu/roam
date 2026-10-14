@@ -26,6 +26,7 @@ let viewportRevision = 0;
 let selectionAnchor: [number, number] | null = null;
 
 const shell = new AppShell(app, {
+  onMapLayoutChange: () => mapView?.updatePadding(),
   onBack: () => navigateTo(trail.length - 2),
   onHome: () => selectRegion(ROOT_REGION.adcode),
   onNavigate: navigateTo,
@@ -84,7 +85,7 @@ function selectRegion(adcode: string, immediate = false): void {
   const region = boundaries.getRegion(adcode);
   if (!region || !mapView) return;
   trail = boundaries.getTrail(adcode);
-  selectionAnchor = [(region.bounds[0] + region.bounds[2]) / 2, (region.bounds[1] + region.bounds[3]) / 2];
+  selectionAnchor = region.anchor ?? [(region.bounds[0] + region.bounds[2]) / 2, (region.bounds[1] + region.bounds[3]) / 2];
   updateList();
   mapView.focusRegion(region, shell.getMapPadding(), immediate);
   viewportBoundaries?.update(mapView.getViewport(), region);
@@ -108,12 +109,9 @@ async function syncViewport(viewport: MapViewport, navigation: boolean): Promise
       mapView!.setRegion(region);
       viewportBoundaries?.update(viewport, region);
     }
-    const neighbors = await boundaries.nearbyRegions(region, viewport);
-    if (!isCurrent()) return;
-    mapView!.setNearbyRegions(neighbors);
   } catch (error) {
     if (!isCurrent()) return;
-    shell.showStatus((error instanceof Error ? error.message : "周边区域加载失败") + "；继续缩放或拖动可重试", "error", false);
+    shell.showStatus((error instanceof Error ? error.message : "区域边界加载失败") + "；继续缩放或拖动可重试", "error", false);
   }
 }
 
@@ -130,6 +128,7 @@ async function initialize(): Promise<void> {
   try {
     if (!mapView) {
       mapView = new MapView(shell.mapElement, {
+        getMapPadding: () => shell.getMapPadding(),
         onRegionClick: selectRegion,
         onAttractionClick: showAttraction,
         onViewportChange: (viewport) => {
@@ -137,7 +136,7 @@ async function initialize(): Promise<void> {
           viewportBoundaries?.update(viewport, boundaries.getRegion(trail.at(-1)?.adcode ?? ROOT_REGION.adcode) ?? null);
         },
         onViewportSettled: (viewport, navigation) => { void syncViewport(viewport, navigation); },
-        onAttractionDisplayChange: (display, region) => shell.updateMapDisplay(display, region),
+        onAttractionDisplayChange: (display) => shell.updateMapDisplay(display),
         onError: (message) => {
           renderError = message;
           shell.showStatus(message, "error", false);

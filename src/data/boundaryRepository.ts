@@ -1,6 +1,6 @@
 import { DIRECT_DISTRICT_CODES, ROOT_REGION } from "../config";
-import { collectionBounds, featureBounds, intersects, nearbyRegionBounds, pointInFeature } from "../map/geometry";
-import { regionFitsViewport } from "../map/viewportSelection";
+import { collectionBounds, featureAnchor, featureBounds, intersects, nearbyRegionBounds, pointInFeature } from "../map/geometry";
+import { regionFitsViewport, regionTooSmallForViewport } from "../map/viewportSelection";
 import { boundaryScope } from "../map/boundaryPresentation";
 import type { BoundaryCollection, MapViewport, RegionRecord, RegionTrailItem } from "../types";
 
@@ -63,12 +63,14 @@ export class BoundaryRepository {
   async regionAtViewport(viewport: MapViewport, anchor: [number, number], currentAdcode?: string): Promise<RegionRecord> {
     let data = await this.loadRoot();
     let region = this.getRegion(ROOT_REGION.adcode)!;
-    if (viewport.zoom < 4 || regionFitsViewport(region, viewport, currentAdcode)) return region;
-    // 从省到区县，找到视野能容纳的最粗一级；局部放大则继续走向最小区域。
+    if (regionFitsViewport(region, viewport, currentAdcode)) return region;
+    // 从省到区县寻找合适层级；区域已缩得很小时保留上一级，不能只因能放进画面就一直选中。
     while (data.features.length) {
       const feature = data.features.find((item) => this.getRegion(String(item.properties.adcode)) && pointInFeature(anchor, item));
       if (!feature) break;
-      region = this.getRegion(String(feature.properties.adcode))!;
+      const child = this.getRegion(String(feature.properties.adcode))!;
+      if (regionTooSmallForViewport(child, viewport, currentAdcode)) break;
+      region = child;
       if (regionFitsViewport(region, viewport, currentAdcode) || !this.childPath(region)) break;
       data = await this.loadChildren(region);
     }
@@ -178,7 +180,7 @@ export class BoundaryRepository {
         this.regions.set(adcode, {
           adcode, name: properties.name, level: properties.level,
           parentAdcode: properties.parent?.adcode ? String(properties.parent.adcode) : undefined,
-          bounds: featureBounds(feature), childrenNum: properties.childrenNum ?? 0,
+          bounds: featureBounds(feature), childrenNum: properties.childrenNum ?? 0, anchor: featureAnchor(feature),
         });
       }
       this.cache.set(path, data);

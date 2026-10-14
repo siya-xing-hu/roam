@@ -21,6 +21,17 @@ export function pointInFeature(point: [number, number], feature: BoundaryFeature
   return polygons.some((rings) => inRing(rings[0]) && !rings.slice(1).some(inRing));
 }
 
+export function featureAnchor(feature: BoundaryFeature): [number, number] | undefined {
+  const polygons = feature.geometry.type === "Polygon" ? [feature.geometry.coordinates] : feature.geometry.coordinates;
+  // 狭长或凹形区域的外接矩形中心可能在区域外，优先使用经过多边形校验的代表点。
+  for (const point of [feature.properties.centroid, feature.properties.center, polygons[0]?.[0]?.[0]]) {
+    if (point?.length === 2 && point.every(Number.isFinite) && pointInFeature([point[0], point[1]], feature)) {
+      return [point[0], point[1]];
+    }
+  }
+  return undefined;
+}
+
 export function nearbyRegionBounds(bounds: MapBounds): MapBounds {
   // 周边随区域尺度外扩 20%，小区县至少外扩 20 公里，避免边界另一侧的景点突然消失。
   const latMargin = Math.max((bounds[3] - bounds[1]) * 0.2, 20 / EARTH_RADIUS_KM * 180 / Math.PI);

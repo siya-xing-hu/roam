@@ -2,9 +2,10 @@ import { APP_NAME, LEVEL_COLORS, LEVEL_LABELS } from "../config";
 import { belongsToRegion, boundaryLevelLabel } from "../data/attractionStore";
 import type { AttractionDisplay } from "../data/attractionDisplay";
 import { displayRegionLevel } from "../map/viewportSelection";
-import type { Attraction, AttractionDataset, AttractionFilters, RegionRecord, RegionTrailItem } from "../types";
+import type { Attraction, AttractionDataset, AttractionFilters, RegionTrailItem } from "../types";
 
 interface ShellCallbacks {
+  onMapLayoutChange: () => void;
   onBack: () => void;
   onHome: () => void;
   onNavigate: (index: number) => void;
@@ -161,17 +162,13 @@ export class AppShell {
     this.hideDetails();
   }
 
-  updateMapDisplay(display: AttractionDisplay, region: RegionRecord): void {
-    const leaf = region.level === "district" || !region.childrenNum;
-    const message = region.level === "country"
-      ? `全国视角 · 显示全部 5 级及以上景点 · 画面内 ${display.primaryIds.length} 处`
-      : `画面内本区 ${display.primaryIds.length} 处${leaf ? "" : "（最多 20）"}`
-      + ` · 周边 ${display.nearbyNamedIds.length} 处带名称 + ${display.nearbyUnnamedIds.length} 处点位`;
+  updateMapDisplay(display: AttractionDisplay): void {
+    const message = `画面中心 ${display.coreIds.length}/20 · 边缘 ${display.edgeIds.length}/20 · 屏外预备 ${display.bufferIds.length}/20`;
     for (const selector of ["#threshold-note", "#map-level-note"]) {
       const note = this.app.querySelector<HTMLElement>(selector);
       if (!note) continue;
-      note.textContent = message;
-      note.title = "全国显示全部 5 级及以上景点；最小区域保留全部点位；市、省按等级显示前 20 处；周边合计最多 20 个名称和 20 个点位。等级筛选仍然生效，名称会自动避让。";
+      if (note.textContent !== message) note.textContent = message;
+      note.title = "按可用地图画面划分：中心宽、高各 70%，其余为边缘，屏外四周各预留 1/4 屏缓冲。三组各最多 20 个，按等级从高到低选取，不受行政区域限制；不足时按实际数量显示。拖动和缩放过程中持续更新，名称自动避让。等级筛选仍生效。";
     }
   }
 
@@ -319,7 +316,9 @@ export class AppShell {
   private setPanelOpen(open: boolean): void {
     const panel = this.app.querySelector<HTMLElement>("#panel");
     const trigger = this.app.querySelector<HTMLButtonElement>("#panel-open");
+    const changed = panel?.classList.contains("is-closed") === open;
     panel?.classList.toggle("is-closed", !open);
     if (trigger) trigger.hidden = open;
+    if (changed) this.callbacks.onMapLayoutChange();
   }
 }

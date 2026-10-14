@@ -24,6 +24,20 @@ function view(bounds: MapBounds, zoom: number, scale = 1.03): MapViewport {
 const pearl: [number, number] = [121.4997, 31.2397];
 
 describe("缩放时自动切换所选行政区域", () => {
+  it("内蒙古使用实际区域内的锚点，完整视野小幅平移不会误退全国，也不受固定 zoom 限制", async () => {
+    const repo = new BoundaryRepository();
+    const root = await repo.loadRoot();
+    const region = repo.getRegion("150000")!;
+    const feature = root.features.find((item) => String(item.properties.adcode) === region.adcode)!;
+    const viewport = view(region.bounds, 3.8, 1.2);
+    expect(pointInFeature(viewport.center, feature)).toBe(false);
+    expect(pointInFeature(region.anchor!, feature)).toBe(true);
+    viewport.bounds[0] += 0.01;
+    viewport.bounds[2] += 0.01;
+    const anchor = viewportAnchor(viewport, region.anchor!);
+    expect((await repo.regionAtViewport(viewport, anchor, region.adcode)).adcode).toBe(region.adcode);
+  });
+
   it("浦东新区 → 上海市 → 全国，放大后能回到浦东新区", async () => {
     const repo = new BoundaryRepository();
     const district = (await repo.resolveRegion("310115"))!;
@@ -43,6 +57,32 @@ describe("缩放时自动切换所选行政区域", () => {
     expect(adjacent.map((r) => r.adcode)).toEqual(expect.arrayContaining(["320000", "330000"]));
     expect(adjacent.some((r) => r.adcode.startsWith("31"))).toBe(false);
     expect(adjacent.every((r) => r.level === "province")).toBe(true);
+  });
+
+  it("上海缩小到跨省视野时退出选区，即使尚未达到全国 zoom 阈值", async () => {
+    const repo = new BoundaryRepository();
+    const district = (await repo.resolveRegion("310115"))!;
+    const shanghai = repo.getRegion("310000")!;
+    const broadView = view([97, 19, 134, 42], 4.8, 1);
+    expect((await repo.regionAtViewport(view(shanghai.bounds, 7, 1.6), pearl, shanghai.adcode)).adcode).toBe("310000");
+    expect(regionFitsViewport(repo.getRegion("100000")!, broadView)).toBe(false);
+    for (const previous of [district.adcode, shanghai.adcode, "100000"]) {
+      expect((await repo.regionAtViewport(broadView, pearl, previous)).adcode).toBe("100000");
+    }
+    expect((await repo.regionAtViewport(view(shanghai.bounds, 8), pearl, "100000")).adcode).toBe("310000");
+    expect((await repo.regionAtViewport(view(district.bounds, 10), pearl, "310000")).adcode).toBe("310115");
+  });
+
+  it("宽视野自动退出也适用于普通省份，缩放临界区间保持原层级", async () => {
+    const repo = new BoundaryRepository();
+    await repo.loadRoot();
+    for (const [adcode, anchor] of [["310000", pearl], ["450000", [108.4, 22.8]]] as const) {
+      const province = repo.getRegion(adcode)!;
+      const middle = view(province.bounds, 5, 3.2);
+      expect((await repo.regionAtViewport(middle, [...anchor], adcode)).adcode).toBe(adcode);
+      expect((await repo.regionAtViewport(middle, [...anchor], "100000")).adcode).toBe("100000");
+      expect((await repo.regionAtViewport(view(province.bounds, 5, 5), [...anchor], adcode)).adcode).toBe("100000");
+    }
   });
 
   it("选中松江保留上海其他区，跨市使用嘉兴和苏州，不加载嘉善县", async () => {
